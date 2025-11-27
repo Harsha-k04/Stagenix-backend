@@ -1,0 +1,27 @@
+{
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "express": "^5.1.0",
+    "firebase": "^12.6.0",
+    "framer-motion": "^12.23.24",
+    "lucide-react": "^0.555.0",
+    "tailwind-merge": "^3.4.0",
+    "three": "^0.181.2"
+  },
+  "name": "stagenix",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/three": "^0.181.0",
+    "autoprefixer": "^10.4.22",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.17"
+  }
+}
