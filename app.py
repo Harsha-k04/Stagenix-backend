@@ -1,4 +1,3 @@
-# app.py
 from flask import Flask, request, jsonify, send_from_directory
 from ultralytics import YOLO
 from werkzeug.utils import secure_filename
@@ -16,7 +15,7 @@ app = Flask(
 # --- Allow CORS for Next.js frontend (UPDATED) ---
 CORS(
     app,
-    resources={r"/*": {"origins": "*"}},   # ← allow all origins for Render/Vercel
+    resources={r"/*": {"origins": "*"}},   # allow all origins for Render/Vercel
     allow_headers=["Content-Type", "Authorization"],
     expose_headers=["Content-Type", "Authorization"],
     supports_credentials=True
@@ -62,7 +61,6 @@ def generate_objects_from_prompt(prompt: str):
                 "rotation": [0, 0, 0]
             })
 
-    # If no relevant words found, fallback object
     if not objects:
         objects.append({
             "name": "cube",
@@ -140,7 +138,9 @@ def home():
 
 
 # ----------------------------------------
-# ▶ Run Flask locally
+# ▶ Run Flask locally AND Render
 # ----------------------------------------
 if __name__ == "__main__":
-    app.run(host="localhost", port=5000, debug=True)
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
