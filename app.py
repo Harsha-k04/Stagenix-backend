@@ -13,15 +13,14 @@ app = Flask(
     static_url_path=""
 )
 
-# --- Allow CORS for Next.js frontend ---
+# --- Allow CORS for Next.js frontend (UPDATED) ---
 CORS(
     app,
-    resources={r"/*": {"origins": ["http://localhost:3000", "http://127.0.0.1:3000"]}},
+    resources={r"/*": {"origins": "*"}},   # ← allow all origins for Render/Vercel
     allow_headers=["Content-Type", "Authorization"],
     expose_headers=["Content-Type", "Authorization"],
     supports_credentials=True
 )
-
 
 
 # --- Load YOLO model ---
@@ -51,7 +50,7 @@ def generate_objects_from_prompt(prompt: str):
         "sofa": "sofa",
         "carpet": "carpet",
         "stage": "stage",
-        "wedding":"wedding",
+        "wedding": "wedding",
     }
 
     objects = []
@@ -145,4 +144,3 @@ def home():
 # ----------------------------------------
 if __name__ == "__main__":
     app.run(host="localhost", port=5000, debug=True)
-
