@@ -70,6 +70,9 @@ def generate_objects_from_prompt(prompt: str):
 
     return objects
 
+@app.route("/ping")
+def ping():
+    return {"status": "ok", "message": "backend alive"}, 200
 
 # ----------------------------------------
 # 🧠 Prediction Route
