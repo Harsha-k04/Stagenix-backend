@@ -11,7 +11,7 @@ app = Flask(
     static_folder="public",
     static_url_path=""
 )
-
+GITHUB_MODEL_URL = "https://github.com/Harsha-k04/Stagenix-backend/releases/download/v1.0/perfect_stage_corrected.glb"
 # --- Allow CORS for Next.js frontend (UPDATED) ---
 CORS(
     app,
@@ -69,7 +69,20 @@ def generate_objects_from_prompt(prompt: str):
         })
 
     return objects
+@app.route("/model/<path:filename>")
+def proxy_model(filename):
+    r = requests.get(GITHUB_MODEL_URL, stream=True)
 
+    def generate():
+        for chunk in r.iter_content(chunk_size=8192):
+            if chunk:
+                yield chunk
+
+    return Response(
+        generate(),
+        content_type="model/gltf-binary",
+        headers={"Access-Control-Allow-Origin": "*"}
+    )
 @app.route("/ping")
 def ping():
     return {"status": "ok", "message": "backend alive"}, 200
