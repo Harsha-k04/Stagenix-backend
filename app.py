@@ -1,6 +1,7 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context
 from ultralytics import YOLO
 from werkzeug.utils import secure_filename
+import requests   # <-- REQUIRED
 import os
 import random
 from flask_cors import CORS
@@ -11,7 +12,9 @@ app = Flask(
     static_folder="public",
     static_url_path=""
 )
+
 MODEL_URL = "https://github.com/Harsha-k04/Stagenix-backend/releases/download/v1.0/perfect_stage_corrected.glb?raw=1"
+
 # --- Allow CORS for Next.js frontend (UPDATED) ---
 CORS(
     app,
@@ -20,7 +23,6 @@ CORS(
     expose_headers=["Content-Type", "Authorization"],
     supports_credentials=True
 )
-
 
 # --- Load YOLO model ---
 model = YOLO("yolov8l-seg.pt")
@@ -69,6 +71,8 @@ def generate_objects_from_prompt(prompt: str):
         })
 
     return objects
+
+
 @app.route("/model/perfect_stage_corrected.glb")
 def serve_model():
     headers = {
@@ -77,7 +81,12 @@ def serve_model():
     }
 
     try:
-        r = requests.get(MODEL_URL, headers=headers, stream=True, allow_redirects=True)
+        r = requests.get(
+            MODEL_URL,
+            headers=headers,
+            stream=True,
+            allow_redirects=True
+        )
 
         if r.status_code != 200:
             return {"error": f"GitHub returned {r.status_code}"}, 500
@@ -91,9 +100,12 @@ def serve_model():
 
     except Exception as e:
         return {"error": str(e)}, 500
+
+
 @app.route("/ping")
 def ping():
     return {"status": "ok", "message": "backend alive"}, 200
+
 
 # ----------------------------------------
 # 🧠 Prediction Route
@@ -165,6 +177,5 @@ def home():
 # ▶ Run Flask locally AND Render
 # ----------------------------------------
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
