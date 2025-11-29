@@ -1,12 +1,18 @@
-from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context
+# app.py
+from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, abort
 from ultralytics import YOLO
 from werkzeug.utils import secure_filename
 import requests   # <-- REQUIRED
 import os
 import random
 from flask_cors import CORS
+import uuid
+import time
+import threading
 
-# --- Flask app configuration ---
+# ================================================================
+# 🔶 ORIGINAL BACKEND CONFIG (unchanged)
+# ================================================================
 app = Flask(
     __name__,
     static_folder="public",
@@ -15,30 +21,22 @@ app = Flask(
 
 MODEL_URL = "https://github.com/Harsha-k04/Stagenix-backend/releases/download/v1.0/perfect_stage_corrected.glb?raw=1"
 
-# --- Allow CORS for Next.js frontend (UPDATED) ---
 CORS(
     app,
-    resources={r"/*": {"origins": "*"}},   # allow all origins for Render/Vercel
+    resources={r"/*": {"origins": "*"}},
     allow_headers=["Content-Type", "Authorization"],
     expose_headers=["Content-Type", "Authorization"],
     supports_credentials=True
 )
 
-# --- Load YOLO model ---
 model = YOLO("yolov8l-seg.pt")
 
-# --- Ensure upload folder exists ---
 os.makedirs("uploads", exist_ok=True)
 
-
-# ----------------------------------------
-# 🔍 Helper: Simple keyword-based parser
-# ----------------------------------------
+# ================================================================
+# 🔍 Helper: Simple keyword-based scene generator (unchanged)
+# ================================================================
 def generate_objects_from_prompt(prompt: str):
-    """
-    Simulate 3D object layout based on keywords in the prompt.
-    You can expand this as you add new 3D assets.
-    """
     prompt = prompt.lower()
 
     object_library = {
@@ -73,6 +71,9 @@ def generate_objects_from_prompt(prompt: str):
     return objects
 
 
+# ================================================================
+# 🔶 ORIGINAL ROUTES (unchanged)
+# ================================================================
 @app.route("/model/perfect_stage_corrected.glb")
 def serve_model():
     headers = {
@@ -81,12 +82,7 @@ def serve_model():
     }
 
     try:
-        r = requests.get(
-            MODEL_URL,
-            headers=headers,
-            stream=True,
-            allow_redirects=True
-        )
+        r = requests.get(MODEL_URL, headers=headers, stream=True, allow_redirects=True)
 
         if r.status_code != 200:
             return {"error": f"GitHub returned {r.status_code}"}, 500
@@ -107,25 +103,15 @@ def ping():
     return {"status": "ok", "message": "backend alive"}, 200
 
 
-# ----------------------------------------
-# 🧠 Prediction Route
-# ----------------------------------------
 @app.route("/predict", methods=["POST"])
 def predict():
-    """
-    Handles:
-    - Image uploads → YOLO segmentation
-    - Prompt text → keyword-based layout generation
-    """
     response = {}
 
-    # --- Image input ---
     if "image" in request.files:
         img = request.files["image"]
         img_path = os.path.join("uploads", secure_filename(img.filename))
         img.save(img_path)
 
-        # Run YOLO detection
         results = model(img_path)
         detections = results[0].tojson()
 
@@ -136,7 +122,6 @@ def predict():
             "segmented_image": f"/uploads/{secure_filename(img.filename)}"
         }
 
-    # --- Text prompt input ---
     elif "prompt" in request.form:
         prompt = request.form["prompt"]
         objects = generate_objects_from_prompt(prompt)
@@ -155,9 +140,6 @@ def predict():
     return jsonify(response)
 
 
-# ----------------------------------------
-# 🗂 Serve static files
-# ----------------------------------------
 @app.route("/uploads/<path:filename>")
 def uploads(filename):
     return send_from_directory("uploads", filename)
@@ -173,9 +155,157 @@ def home():
     return app.send_static_file("index.html")
 
 
-# ----------------------------------------
-# ▶ Run Flask locally AND Render
-# ----------------------------------------
+# ================================================================
+# 🔶 MERGED: KAGGLE WORKER QUEUE SYSTEM
+# ================================================================
+
+UPLOAD_DIR = "generated_models"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+JOBS = {}
+JOBS_LOCK = threading.Lock()
+
+def new_job(prompt, meta=None):
+    job_id = uuid.uuid4().hex
+    job = {
+        "id": job_id,
+        "prompt": prompt,
+        "meta": meta or {},
+        "status": "queued",
+        "created_at": time.time(),
+        "started_at": None,
+        "finished_at": None,
+        "result": None,
+        "worker_id": None,
+        "error": None,
+    }
+    with JOBS_LOCK:
+        JOBS[job_id] = job
+    return job
+
+
+def next_queued_job_and_claim(worker_id):
+    with JOBS_LOCK:
+        for job in JOBS.values():
+            if job["status"] == "queued":
+                job["status"] = "running"
+                job["started_at"] = time.time()
+                job["worker_id"] = worker_id
+                return job
+    return None
+
+
+def update_job_done(job_id, result_filename):
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if not job:
+            return None
+        job["status"] = "done"
+        job["finished_at"] = time.time()
+        job["result"] = {"file": result_filename, "url": f"/result/{job_id}"}
+        return job
+
+
+def update_job_failed(job_id, error_msg):
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if not job:
+            return None
+        job["status"] = "failed"
+        job["finished_at"] = time.time()
+        job["error"] = error_msg
+        return job
+
+
+# ---- API: create job ----
+@app.route("/generate", methods=["POST"])
+def generate():
+    body = request.get_json(force=True)
+    prompt = body.get("prompt")
+    meta = body.get("meta", {})
+
+    if not prompt:
+        return jsonify({"error": "missing prompt"}), 400
+
+    job = new_job(prompt, meta)
+    return jsonify({"job_id": job["id"]}), 201
+
+
+# ---- API: job status ----
+@app.route("/status/<job_id>", methods=["GET"])
+def status(job_id):
+    job = JOBS.get(job_id)
+    if not job:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({k: v for k, v in job.items() if k != "meta"}), 200
+
+
+# ---- API: get result GLB ----
+@app.route("/result/<job_id>", methods=["GET"])
+def get_result(job_id):
+    job = JOBS.get(job_id)
+    if not job:
+        return jsonify({"error": "not found"}), 404
+    if job["status"] != "done":
+        return jsonify({"error": "result not ready"}), 404
+
+    if job["result"]["file"]:
+        return send_from_directory(UPLOAD_DIR, job["result"]["file"], as_attachment=False)
+    else:
+        return jsonify({"url": job["result"]["url"]})
+
+
+# ---- Worker polling endpoint (Kaggle pulls jobs) ----
+@app.route("/job/next", methods=["POST"])
+def job_next():
+    body = request.get_json(force=True) if request.data else {}
+    worker_id = body.get("worker_id") or request.remote_addr
+
+    job = next_queued_job_and_claim(worker_id)
+    if not job:
+        return "", 204
+    return jsonify(job), 200
+
+
+# ---- Worker reports completion ----
+@app.route("/job/<job_id>/complete", methods=["POST"])
+def job_complete(job_id):
+    job = JOBS.get(job_id)
+    if not job:
+        return jsonify({"error": "job not found"}), 404
+
+    if "model" in request.files:
+        f = request.files["model"]
+        filename = secure_filename(f.filename)
+        out_fname = f"{job_id}__{filename}"
+        out_path = os.path.join(UPLOAD_DIR, out_fname)
+        f.save(out_path)
+        update_job_done(job_id, out_fname)
+        return jsonify({"status": "ok", "file": f"/result/{job_id}"}), 200
+
+    body = request.get_json(force=True) if request.data else {}
+    model_url = body.get("model_url")
+
+    if model_url:
+        with JOBS_LOCK:
+            job["status"] = "done"
+            job["finished_at"] = time.time()
+            job["result"] = {"file": None, "url": model_url}
+        return jsonify({"status": "ok", "url": model_url}), 200
+
+    return jsonify({"error": "no model provided"}), 400
+
+
+# ---- list jobs (debug only) ----
+@app.route("/_jobs", methods=["GET"])
+def list_jobs():
+    with JOBS_LOCK:
+        return jsonify(list(JOBS.values())), 200
+
+
+# ================================================================
+# 🎯 RUN APP (unchanged)
+# ================================================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
