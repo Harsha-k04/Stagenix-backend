@@ -302,6 +302,26 @@ def list_jobs():
     with JOBS_LOCK:
         return jsonify(list(JOBS.values())), 200
 
+@app.route("/api/upload-sketch", methods=["POST"])
+def upload_sketch():
+    if "sketch" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    file = request.files["sketch"]
+    filename = secure_filename(file.filename)
+    save_path = os.path.join("uploads", filename)
+    file.save(save_path)
+
+    print("Sketch uploaded:", save_path)
+
+    # OPTIONAL: auto-create a Kaggle worker job using the uploaded sketch
+    # job = new_job(prompt="sketch-upload", meta={"sketch_path": save_path})
+    # return jsonify({"job_id": job["id"], "sketch_path": save_path})
+
+    return jsonify({
+        "status": "ok",
+        "sketch_path": save_path
+    })
 
 # ================================================================
 # 🎯 RUN APP (unchanged)
