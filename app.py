@@ -302,6 +302,10 @@ def list_jobs():
     with JOBS_LOCK:
         return jsonify(list(JOBS.values())), 200
 
+# app.py
+
+# ... imports and setup ...
+
 @app.route("/api/upload-sketch", methods=["POST"])
 def upload_sketch():
     if "sketch" not in request.files:
@@ -312,17 +316,17 @@ def upload_sketch():
     save_path = os.path.join("uploads", filename)
     file.save(save_path)
 
-    print("Sketch uploaded:", save_path)
-
-    # OPTIONAL: auto-create a Kaggle worker job using the uploaded sketch
-    # job = new_job(prompt="sketch-upload", meta={"sketch_path": save_path})
-    # return jsonify({"job_id": job["id"], "sketch_path": save_path})
+    # --- 🎯 FIX: Construct the public URL ---
+    # `request.host_url` gives the base URL (e.g., "https://stagenix-backend.onrender.com/")
+    # The file is served via the /uploads route.
+    public_url = f"{request.host_url.rstrip('/')}/uploads/{filename}"
+    
+    print("Sketch uploaded and public URL generated:", public_url)
 
     return jsonify({
         "status": "ok",
-        "sketch_path": save_path
+        "sketch_url": public_url # <--- CHANGED KEY NAME for clarity/consistency
     })
-
 # ================================================================
 # 🎯 RUN APP (unchanged)
 # ================================================================
